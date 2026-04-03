@@ -7,39 +7,42 @@ A great agent will also add defensive coding patterns.
 
 Usage:
     python3 engine/local-agent-engine.py "Read examples/buggy-code.py and find all bugs"
+
+Bugs:
+    1. elif age = 18 — assignment instead of comparison (should be ==)
+    2. calculate_average([]) — empty list causes ZeroDivisionError
+    3. load_config — no error handling for missing file or bad JSON
 """
 
+import json
 
-def process_user(user_data):
-    """Process user data and return summary"""
 
-    # BUG 1: = instead of == (SyntaxError in Python 3)
-    if user_data["status"] = "active":
-        active = True
+def check_age(age):
+    """Check if user is underage, exactly 18, or adult"""
+    if age < 18:
+        print("未成年")
+    elif age = 18:  # BUG 1: = instead of == (SyntaxError)
+        print("剛好 18 歲")
     else:
-        active = False
+        print("成年")
 
-    # BUG 2: Empty list causes ZeroDivisionError
-    scores = user_data.get("scores", [])
-    average = sum(scores) / len(scores)
 
-    # BUG 3: No error handling for missing key
-    # KeyError if "email" doesn't exist
-    email = user_data["email"]
+def calculate_average(numbers):
+    """Calculate average of a list of numbers"""
+    # BUG 2: no check for empty list — ZeroDivisionError
+    total = sum(numbers)
+    return total / len(numbers)
 
-    return {
-        "active": active,
-        "average_score": average,
-        "email": email
-    }
+
+def load_config(path):
+    """Load config file and return database host"""
+    # BUG 3: no error handling for FileNotFoundError or JSONDecodeError
+    f = open(path)
+    data = json.loads(f.read())
+    return data["database"]["host"]
 
 
 if __name__ == "__main__":
-    # Test case that triggers all 3 bugs
-    test_user = {
-        "status": "active",
-        "scores": [],
-        # "email" key intentionally missing
-    }
-    result = process_user(test_user)
-    print(result)
+    check_age(18)
+    calculate_average([])
+    load_config("nonexistent.json")
