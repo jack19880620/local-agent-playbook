@@ -1060,6 +1060,216 @@ def execute_full_tool(name, args):
             return subprocess.run(f"unzip -o '{src}' -d '{dst}'", capture_output=True, text=True, shell=True, timeout=60).stdout
         return subprocess.run(f"tar xzf '{src}' -C '{dst}'", capture_output=True, text=True, shell=True, timeout=60).stdout or f"OK: extracted to {dst}"
 
+    # --- CSV 查詢 ---
+    elif name == "csv_query":
+        path = args.get("path", "")
+        limit = args.get("limit", 20)
+        columns = args.get("columns", [])
+        try:
+            import csv
+            with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                reader = csv.DictReader(f)
+                rows = []
+                for i, row in enumerate(reader):
+                    if i >= limit: break
+                    if columns:
+                        row = {k: row.get(k, '') for k in columns}
+                    rows.append(row)
+            if not rows:
+                return "(empty CSV or no matching columns)"
+            header = list(rows[0].keys())
+            lines = ["\t".join(header)]
+            for row in rows:
+                lines.append("\t".join(str(row.get(h, '')) for h in header))
+            return "\n".join(lines)
+        except Exception as e:
+            return f"ERROR: {e}"
+
+    # --- 文字處理 ---
+    elif name == "text_process":
+        input_path = args.get("input_path", "")
+        operation = args.get("operation", "")
+        op_args = args.get("args", {})
+        try:
+            content = open(input_path, 'r', encoding='utf-8', errors='replace').read()
+            if operation == "count_words":
+                return f"Characters: {len(content)}, Lines: {content.count(chr(10))+1}, Words: {len(content.split())}"
+            elif operation == "sort_lines":
+                return "\n".join(sorted(content.split('\n')))
+            elif operation == "unique_lines":
+                seen = set()
+                result = []
+                for line in content.split('\n'):
+                    if line not in seen:
+                        seen.add(line)
+                        result.append(line)
+                return "\n".join(result)
+            elif operation == "replace":
+                old = op_args.get("old", "")
+                new = op_args.get("new", "")
+                return content.replace(old, new)
+            elif operation == "head":
+                n = op_args.get("n", 10)
+                return "\n".join(content.split('\n')[:n])
+            elif operation == "tail":
+                n = op_args.get("n", 10)
+                return "\n".join(content.split('\n')[-n:])
+            return f"ERROR: unknown operation '{operation}'"
+        except Exception as e:
+            return f"ERROR: {e}"
+
+    # --- 程序列表 ---
+    elif name == "process_list":
+        filter_str = args.get("filter", "")
+        sort_by = args.get("sort_by", "cpu")
+        sort_flag = {"cpu": "--sort=-%cpu", "memory": "--sort=-%mem", "pid": "--sort=pid"}.get(sort_by, "--sort=-%cpu")
+        cmd = f"ps aux {sort_flag}"
+        if filter_str:
+            cmd += f" | head -1; ps aux {sort_flag} | grep -i '{filter_str}' | grep -v grep"
+        else:
+            cmd += " | head -15"
+        return subprocess.run(cmd, capture_output=True, text=True, shell=True, timeout=10).stdout
+
+    # --- 網路檢查 ---
+    elif name == "network_check":
+        host = args.get("host", "")
+        check_type = args.get("check_type", "ping")
+        if check_type == "ping":
+            return subprocess.run(f"ping -c 3 -W 5 {host}", capture_output=True, text=True, shell=True, timeout=20).stdout
+        elif check_type == "dns":
+            return subprocess.run(f"nslookup {host}", capture_output=True, text=True, shell=True, timeout=10).stdout
+        elif check_type == "port":
+            port = args.get("port", 80)
+            r = subprocess.run(f"timeout 5 bash -c 'echo > /dev/tcp/{host}/{port}' 2>&1 && echo 'Port {port} OPEN' || echo 'Port {port} CLOSED'",
+                              capture_output=True, text=True, shell=True, timeout=10)
+            return r.stdout + r.stderr
+        return f"ERROR: unknown check_type '{check_type}'"
+
+    # --- 任務清單讀取 ---
+    elif name == "todo_read":
+        todo_path = "/tmp/local-agent-todo.json"
+        try:
+            if os.path.exists(todo_path):
+                tasks = json.load(open(todo_path))
+                if not tasks:
+                    return "(no tasks)"
+                lines = []
+                for i, t in enumerate(tasks):
+                    status = "✓" if t.get("done") else "○"
+                    lines.append(f"{i+1}. [{status}] {t.get('task', '')}")
+                return "\n".join(lines)
+            return "(no tasks)"
+        except Exception as e:
+            return f"ERROR: {e}"
+
+    # --- 任務清單更新 ---
+    elif name == "todo_write":
+        todo_path = "/tmp/local-agent-todo.json"
+        action = args.get("action", "")
+        try:
+            tasks = json.load(open(todo_path)) if os.path.exists(todo_path) else []
+            if action == "add":
+                task = args.get("task", "")
+                tasks.append({"task": task, "done": False})
+                json.dump(tasks, open(todo_path, 'w'), ensure_ascii=False)
+                return f"OK: added task #{len(tasks)}: {task}"
+            elif action == "complete":
+                task_id = args.get("task_id", 0)
+                if 0 < task_id <= len(tasks):
+                    tasks[task_id-1]["done"] = True
+                    json.dump(tasks, open(todo_path, 'w'), ensure_ascii=False)
+                    return f"OK: completed task #{task_id}"
+                return f"ERROR: task #{task_id} not found"
+            elif action == "delete":
+                task_id = args.get("task_id", 0)
+                if 0 < task_id <= len(tasks):
+                    removed = tasks.pop(task_id-1)
+                    json.dump(tasks, open(todo_path, 'w'), ensure_ascii=False)
+                    return f"OK: deleted task #{task_id}: {removed.get('task', '')}"
+                return f"ERROR: task #{task_id} not found"
+            return f"ERROR: unknown action '{action}'"
+        except Exception as e:
+            return f"ERROR: {e}"
+
+    # --- 記憶管理 ---
+    elif name == "memory_manage":
+        action = args.get("action", "")
+        mem_dir = os.environ.get("MEMORY_DIR", "/tmp/local-agent-memory-v2")
+        memory_type = args.get("memory_type", "project")
+        try:
+            if action == "list":
+                result = []
+                for mtype in ['user', 'feedback', 'project', 'reference']:
+                    mdir = f"{mem_dir}/{mtype}"
+                    if os.path.isdir(mdir):
+                        files = os.listdir(mdir)
+                        result.append(f"[{mtype}] {len(files)} files")
+                        for f in sorted(files)[:5]:
+                            result.append(f"  - {f}")
+                return "\n".join(result) or "(no memory)"
+            elif action == "read":
+                key = args.get("key", "")
+                path = f"{mem_dir}/{memory_type}/{key}"
+                if os.path.exists(path):
+                    return open(path, encoding='utf-8').read()
+                return f"(not found: {path})"
+            elif action == "write":
+                key = args.get("key", "")
+                content = args.get("content", "")
+                mdir = f"{mem_dir}/{memory_type}"
+                os.makedirs(mdir, exist_ok=True)
+                with open(f"{mdir}/{key}", 'w', encoding='utf-8') as f:
+                    f.write(content)
+                return f"OK: wrote {len(content)} chars to {memory_type}/{key}"
+            elif action == "search":
+                query = args.get("query", "").lower()
+                results = []
+                for mtype in ['user', 'feedback', 'project', 'reference']:
+                    mdir = f"{mem_dir}/{mtype}"
+                    if not os.path.isdir(mdir): continue
+                    for f in os.listdir(mdir):
+                        content = open(f"{mdir}/{f}", encoding='utf-8', errors='replace').read()
+                        if query in content.lower() or query in f.lower():
+                            results.append(f"[{mtype}/{f}] {content[:100]}")
+                return "\n".join(results) if results else "(no matches)"
+            return f"ERROR: unknown action '{action}'"
+        except Exception as e:
+            return f"ERROR: {e}"
+
+    # --- Cron 管理 ---
+    elif name == "cron_manage":
+        action = args.get("action", "")
+        if action == "list":
+            return subprocess.run("crontab -l 2>/dev/null || echo '(no crontab)'", capture_output=True, text=True, shell=True, timeout=5).stdout
+        elif action == "add":
+            schedule = args.get("schedule", "")
+            command = args.get("command", "")
+            r = subprocess.run(f'(crontab -l 2>/dev/null; echo "{schedule} {command}") | crontab -',
+                              capture_output=True, text=True, shell=True, timeout=5)
+            return f"OK: added cron job" if r.returncode == 0 else f"ERROR: {r.stderr}"
+        elif action == "remove":
+            job_id = args.get("job_id", 0)
+            r = subprocess.run(f"crontab -l 2>/dev/null | sed '{job_id}d' | crontab -",
+                              capture_output=True, text=True, shell=True, timeout=5)
+            return f"OK: removed job #{job_id}" if r.returncode == 0 else f"ERROR: {r.stderr}"
+        return f"ERROR: unknown action '{action}'"
+
+    # --- 環境變數 ---
+    elif name == "env_manage":
+        action = args.get("action", "")
+        if action == "get":
+            key = args.get("key", "")
+            val = os.environ.get(key, "(not set)")
+            return f"{key}={val}"
+        elif action == "set":
+            key = args.get("key", "")
+            value = args.get("value", "")
+            os.environ[key] = value
+            return f"OK: {key}={value} (current session only)"
+        elif action == "list":
+            return "\n".join(f"{k}={v[:50]}" for k, v in sorted(os.environ.items())[:30])
+        return f"ERROR: unknown action '{action}'"
+
     return f"ERROR: unknown tool '{name}'. Use search_tools to find available tools."
 
 
