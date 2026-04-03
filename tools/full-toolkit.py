@@ -1060,6 +1060,68 @@ def execute_full_tool(name, args):
             return subprocess.run(f"unzip -o '{src}' -d '{dst}'", capture_output=True, text=True, shell=True, timeout=60).stdout
         return subprocess.run(f"tar xzf '{src}' -C '{dst}'", capture_output=True, text=True, shell=True, timeout=60).stdout or f"OK: extracted to {dst}"
 
+    # --- Markdown 轉換 ---
+    elif name == "markdown_convert":
+        input_path = args.get("input_path", "")
+        output_path = args.get("output_path", "")
+        try:
+            r = subprocess.run(f"pandoc '{input_path}' -o '{output_path}'",
+                              capture_output=True, text=True, shell=True, timeout=30)
+            if r.returncode == 0:
+                return f"OK: converted {input_path} → {output_path}"
+            return f"ERROR: {r.stderr}"
+        except Exception as e:
+            return f"ERROR: {e}"
+
+    # --- Docker 執行 ---
+    elif name == "docker_exec":
+        container = args.get("container", "")
+        command = args.get("command", "")
+        try:
+            r = subprocess.run(f"docker exec {container} {command}",
+                              capture_output=True, text=True, shell=True, timeout=30)
+            return r.stdout + r.stderr
+        except Exception as e:
+            return f"ERROR: {e}"
+
+    # --- Notebook 執行 ---
+    elif name == "notebook_run":
+        path = args.get("path", "")
+        try:
+            r = subprocess.run(f"jupyter nbconvert --to notebook --execute '{path}' --output /tmp/notebook-output.ipynb",
+                              capture_output=True, text=True, shell=True, timeout=120)
+            if r.returncode == 0:
+                return f"OK: executed {path}"
+            # Fallback: try papermill
+            r2 = subprocess.run(f"papermill '{path}' /tmp/notebook-output.ipynb",
+                               capture_output=True, text=True, shell=True, timeout=120)
+            if r2.returncode == 0:
+                return f"OK: executed {path} (via papermill)"
+            return f"ERROR: jupyter: {r.stderr[:200]} | papermill: {r2.stderr[:200]}"
+        except Exception as e:
+            return f"ERROR: {e}"
+
+    # --- 模型推理 ---
+    elif name == "model_generate":
+        model = args.get("model", "qwen3.5:9b")
+        prompt = args.get("prompt", "")
+        system = args.get("system", "")
+        try:
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+            payload = json.dumps({"model": model, "messages": messages, "stream": False, "think": False})
+            r = subprocess.run(['curl', '-s', '--max-time', '60',
+                               'http://127.0.0.1:11434/api/chat', '-d', payload],
+                              capture_output=True, text=True)
+            if r.stdout.strip():
+                d = json.loads(r.stdout)
+                return d.get('message', {}).get('content', '(no content)')
+            return "(no response from model)"
+        except Exception as e:
+            return f"ERROR: {e}"
+
     # --- CSV 查詢 ---
     elif name == "csv_query":
         path = args.get("path", "")
