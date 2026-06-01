@@ -1,43 +1,124 @@
-# Local AI Agent Playbook — 本地 AI Agent 實戰手冊
+# Local AI Agent Playbook
 
-用 Claude Code 洩漏架構優化 qwen3.5:9b，打造零費用的本地 AI Agent。
+Local AI Agent Playbook is a small, local-first reference implementation for
+building inspectable AI agents on top of Ollama, Python, shell tools, Telegram,
+and simple file-based memory.
 
-## 快速開始
+The project is intentionally lightweight. It is designed for maintainers and
+independent developers who want to study and adapt agent workflows without
+starting from a hosted platform or a large framework.
 
-1. 安裝 Ollama：`curl -fsSL https://ollama.com/install.sh | sh`
-2. 拉模型：`ollama pull qwen3.5:9b`
-3. 跑基礎版：`python3 my-agent.py "列出 /tmp 目錄"`
-4. 跑完整引擎：`python3 engine/local-agent-engine.py "你的任務"`
-5. 接 Telegram：設定 .env 後 `python3 engine/telegram-bot.py`
+## What This Repository Includes
 
-## 目錄結構
+- `engine/local-agent-engine.py` - the main local agent runtime.
+- `engine/telegram-bot.py` - a Telegram control layer for a local agent.
+- `engine/factory-watchdog.sh` - a shell watchdog for long-running local runs.
+- `memory-template/` - project, user, reference, and feedback memory folders.
+- `models/Modelfile.gemma4-agent` - an example Ollama model configuration.
+- `examples/` - small files for code review and debugging demonstrations.
+- `data/` - experiment notes and local model comparison logs.
+- `docs/LOG.md` - development notes from local agent experiments.
+- `.env.example` - environment variables required by the Telegram bridge.
 
-- `my-agent.py` — 基礎版 Agent（第三章存檔點）
-- `engine/local-agent-engine.py` — 完整引擎 含 13 項優化
-- `engine/telegram-bot.py` — Telegram Bot 雙模式路由
-- `models/Modelfile.gemma4-agent` — Gemma 4 調教範例
-- `tools/full-toolkit.py` — **44 個完整工具定義 + Python 實作**（受 Claude Code 架構啟發）
-- `examples/` — 測試用程式碼
-- `data/` — 模型對比測試數據
-- `docs/LOG.md` — 完整實驗記錄
-- `memory-template/` — 四類記憶目錄範本
-- `.env.example` — 環境變數範本
+See `docs/MAINTAINER_WORKFLOWS.md` for concrete workflows this repository is
+intended to support.
 
-## 搭配書籍使用
+## Why It Exists
 
-這個倉庫是《Local AI Agent Playbook》的配套程式碼。
-書裡有完整的思路講解、每一步的原因、優化前後對比數據。
-直接用程式碼可以跑起來，但跟著書走一遍你會學到更多。
+Most AI coding-agent examples either depend on a hosted service or hide too much
+of the execution loop. This repository keeps the loop visible:
 
-購買連結：即將上架
+1. classify the task,
+2. select a small set of tools,
+3. run the model locally,
+4. execute only explicit tool calls,
+5. compress noisy tool output,
+6. preserve lightweight memory,
+7. report results back through a local or Telegram interface.
 
-## 硬體需求
+That makes it useful for learning, debugging, and adapting maintainer
+automation workflows such as issue triage, code review, release checklists,
+local diagnostics, and operator-approved automation.
 
-- NVIDIA 12GB+ VRAM（推薦）/ Apple Silicon M2+ / AMD ROCm / 純 CPU（慢但能用）
-- Python 3.8+
-- Ollama
+## Quick Start
 
-## 授權
+Install Ollama and pull a local model:
 
-程式碼：MIT License
-所有程式碼為原創，受 Claude Code 架構設計原則啟發。
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen3.5:9b
+```
+
+Run the core engine:
+
+```bash
+python3 engine/local-agent-engine.py "summarize this repository"
+```
+
+Optional Telegram bridge:
+
+```bash
+cp .env.example .env
+# Edit .env with your own bot token and operator ID.
+python3 engine/telegram-bot.py
+```
+
+Do not commit `.env` or runtime logs. Tokens belong only in your local
+environment.
+
+## Verified Scope
+
+The core engine and Telegram bridge are kept syntactically valid with the CI
+workflow in this repository. Some files under `examples/` are intentionally
+buggy inputs for review tasks and should not be treated as runnable examples.
+
+Local model behavior varies by hardware, Ollama version, and model family. The
+files in `data/` are experiment logs, not benchmark claims.
+
+## Maintainer Automation Use Cases
+
+This project is most useful as a base for:
+
+- local pull request review helpers,
+- issue and bug triage assistants,
+- release checklist generation,
+- repo health checks,
+- Telegram-based operator approval flows,
+- memory-backed local developer agents,
+- experiments comparing local model behavior.
+
+## Safety Model
+
+The runtime is intentionally explicit: tools are listed in code, secrets are
+loaded from environment variables, and the Telegram bot accepts commands only
+from the configured operator ID. Review `SECURITY.md` before adapting the
+project for a shared environment.
+
+## Development
+
+Run the lightweight syntax check used by CI:
+
+```bash
+python -m py_compile \
+  my-agent.py \
+  engine/local-agent-engine.py \
+  engine/telegram-bot.py \
+  tools/full-toolkit.py
+```
+
+The intentionally broken examples are excluded from this command.
+
+Please read `CONTRIBUTING.md` before opening a pull request and `SECURITY.md`
+before adapting the Telegram or shell-tool pieces.
+
+## Roadmap
+
+- Add unit tests around task classification and tool selection.
+- Add safer command execution policies for shared deployments.
+- Improve experiment logs into reproducible benchmark scripts.
+- Add a threat model for Telegram and shell-tool automation.
+- Document more maintainer workflows using this runtime.
+
+## License
+
+Code is released under the MIT License. See `LICENSE`.

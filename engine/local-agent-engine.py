@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Local AI Agent Engine v1.0
-Inspired by Claude Code's leaked architecture
+Inspired by modern coding-agent workflow patterns
 Optimized for qwen3.5:9b on local GPU
 
 10 optimizations integrated:
